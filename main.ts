@@ -6,7 +6,7 @@
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -21,6 +21,24 @@ if (existsSync(join(repoRoot, 'screenshots'))) {
   cpSync(join(repoRoot, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
 }
 
+// The grader reads /output as a different user, and cpSync keeps the
+// repository's group-only modes (660/2770): make everything it will read
+// world-readable. Never chmod outDir itself — the grader's user can write
+// into it but cannot chmod it.
+function makeReadable(dir) {
+  chmodSync(dir, 0o755);
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      makeReadable(path);
+    } else {
+      chmodSync(path, 0o644);
+    }
+  }
+}
+makeReadable(join(outDir, 'game'));
+makeReadable(join(outDir, 'screenshots'));
+
 // Caps from the competition gate: 4 screenshots at most 256 KiB each,
 // game/ at most 993 files and 48 MiB, paths at most 1000 bytes,
 // dossier text at most 160 KiB.
@@ -31,4 +49,6 @@ const dossier = buildDossier(outDir, {
   game_max_bytes: 50331648,
   game_path_max_bytes: 1000,
 });
-writeFileSync(join(outDir, 'dossier.json'), dossier);
+const dossierPath = join(outDir, 'dossier.json');
+writeFileSync(dossierPath, dossier);
+chmodSync(dossierPath, 0o644);
